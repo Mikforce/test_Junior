@@ -22,7 +22,7 @@ class Question(Base):
     question_text = Column(String)
     answer_text = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+Base.metadata.create_all(engine)
 
 @app.route('/questions', methods=['GET', 'POST'])
 def create_questions():
