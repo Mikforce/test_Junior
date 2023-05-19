@@ -4,7 +4,7 @@ import uuid
 import base64
 
 from flask import Flask, jsonify, request, send_file
-from pydantic import BaseModel
+
 from sqlalchemy import create_engine, Column, Integer, String, Binary, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
