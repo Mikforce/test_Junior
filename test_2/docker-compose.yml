@@ -1,0 +1,18 @@
+version: '3'
+services:
+  database:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: db_name
+      POSTGRES_USER: db_user
+      POSTGRES_PASSWORD: db_password
+    volumes:
+      - ./data:/var/lib/postgresql/data
+  web:
+    build: .
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - database
