@@ -1,0 +1,7 @@
+Flask
+SQLAlchemy==2.0.15
+Flask-SQLAlchemy==2.5.1
+psycopg2-binary
+requests
+pydub
+uuid
