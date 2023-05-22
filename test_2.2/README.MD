@@ -41,6 +41,10 @@
 * Flask
 * PostgreSQL
 * SQLAlchemy
+* psycopg2-binary
+* pydub
+* uuid
+
 
 ## Как запустить
 
@@ -55,19 +59,19 @@ sudo docker-compose up -d
 3. Запустите flask приложение
 ```commandline
 flask --app main.py run
-http://127.0.0.1:5000/questions
+http://127.0.0.1:5000/
 ```
 4. После этого можно использовать API методы для создания пользователей и добавления/получения аудиозаписей. Примеры запросов:
 
-OST http://localhost:5000/user
+POST http://localhost:5000/users
 {
-  "name": "John Doe"
+  "name": "Petr"
 }
 
 POST http://localhost:5000/record
 {
   "user_id": "1",
-  "token": "abcdefghijklmnopqrstuvwxyz",
+  "token": "bbdfbndfdc",
   "file": <wav file>
 }
 
