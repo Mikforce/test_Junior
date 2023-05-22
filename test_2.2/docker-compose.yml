@@ -1,23 +1,26 @@
 version: '3'
 services:
   db:
-    image: postgres
+    image: postgres:12
     restart: always
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
       POSTGRES_DB: admin
+    ports:
+      - "5433:5433"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./data:/var/lib/postgresql/data
+
+
+
   app:
     build: .
     ports:
       - "5000:5000"
     depends_on:
       - db
-    environment:
-      DATABASE_URL: postgresql://admin:admin@db/admin
     volumes:
       - ./uploads:/app/uploads
-volumes:
-  db_data:
+    environment:
+      - DATABASE_URL=postgresql://admin:admin@db/db
