@@ -77,3 +77,6 @@ def download_record():
 app.use_x_sendfile = True
 app.config['STATIC_FOLDER'] = "./uploads"
 
+
+if __name__ == '__main__':
+    app.run(debug=True)
