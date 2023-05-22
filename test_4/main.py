@@ -1,104 +1,127 @@
-from sqlalchemy import create_engine
-from flask import Flask, request, jsonify, send_file
-from werkzeug.utils import secure_filename
-import os
+from flask import Flask, request, Response
+import psycopg2
 import uuid
-import subprocess
+import os
+import requests
+from pydub import AudioSegment
+import soundfile as sf
+
+
 app = Flask(__name__)
 
-DATABASE_URI = 'postgresql://admin:admin@localhost/admin'
-engine = create_engine(DATABASE_URI)
-
-# Настройки для загрузки файлов
-UPLOAD_FOLDER = '/path/to/upload/folder'
-ALLOWED_EXTENSIONS = {'wav'}
+DATABASE_URL = os.environ['DATABASE_URL']
 
 
-# Функция проверки разрешенного расширения файла
-def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def create_user(name):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
 
-
-# REST метод создания пользователя
-@app.route('/user', methods=['POST'])
-def create_user():
-    # Получаем имя пользователя из запроса
-    username = request.json.get('username')
-
-    # Генерируем уникальный идентификатор пользователя
     user_id = str(uuid.uuid4())
-
-    # Генерируем UUID токен доступа для пользователя
     token = str(uuid.uuid4())
 
-    # Записываем данные пользователя в БД
-    # Реализация может быть разной, в зависимости от используемой ORM
-    db.insert_user(user_id, username, token)
+    query = f"INSERT INTO users (id, name, token) VALUES ('{user_id}', '{name}', '{token}')"
 
-    # Возвращаем сгенерированный идентификатор пользователя и токен
-    return jsonify({'user_id': user_id, 'token': token}), 201
+    cur.execute(query)
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return user_id, token
 
 
-# REST метод добавления аудиозаписи
-@app.route('/record', methods=['POST'])
-def upload_record():
-    # Получаем остальные параметры из запроса
-    user_id = request.form['user_id']
-    token = request.form['token']
+def add_audio(user_id, token, audio_file):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
 
-    # Проверяем корректность токена
-    if not db.check_token(user_id, token):
-        return jsonify({'error': 'Invalid token'}), 401
+    query = f"SELECT * FROM users WHERE id='{user_id}' AND token='{token}'"
+    cur.execute(query)
 
-    # Проверяем, что файл был загружен
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file included'}), 400
+    if cur.fetchone() is None:
+        return Response(status=401)
 
-    file = request.files['file']
+    audio_id = str(uuid.uuid4())
 
-    # Проверяем расширение файла
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file extension'}), 400
+    audio_wav = AudioSegment.from_file(audio_file, format="wav")
+    audio_mp3 = audio_wav.export(f"/app/{audio_id}.mp3", format="mp3")
 
-    # Генерируем уникальный идентификатор для записи
-    record_id = str(uuid.uuid4())
+    data, samplerate = sf.read(f"/app/{audio_id}.mp3")
+    duration = len(data) / samplerate
 
-    # Сохраняем wav-файл на сервере
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
+    query = f"INSERT INTO audios (id, user_id, filename, duration) VALUES ('{audio_id}', '{user_id}', '{audio_id}.mp3', {duration})"
 
-    # Конвертируем в mp3 и сохраняем его на сервере
-    mp3_filepath = os.path.join(UPLOAD_FOLDER, '{}.mp3'.format(record_id))
-    subprocess.call(['ffmpeg', '-i', filepath, mp3_filepath])
+    cur.execute(query)
+    conn.commit()
 
-    # Записываем данные файла в БД
-    db.insert_record(record_id, user_id, mp3_filepath)
+    cur.close()
+    conn.close()
 
-    # Генерируем URL для загрузки
-    url = 'http://host:port/record?id={}&user={}'.format(record_id, user_id)
+    return audio_id
 
-    # Возвращаем URL для скачивания записи
-    return jsonify({'url': url}), 201
+    @app.route('/user', methods=['POST'])
+    def create_user_handler():
+        name = request.json.get('name')
 
+    if not name:
+        return Response(status=400)
+
+    user_id, token = create_user(name)
+
+    response_data = {
+        'user_id': user_id,
+        'token': token
+    }
+
+    return response_data
+
+    @app.route('/record', methods=['POST'])
+    def add_audio_handler():
+        user_id = request.form.get('user_id')
+
+    token = request.form.get('token')
+    audio_file = request.files.get('audio')
+
+    if not all([user_id, token, audio_file]):
+        return Response(status=400)
+
+    audio_id = add_audio(user_id, token, audio_file)
+
+    response_data = {
+        'url': f'http://host:port/record?id={audio_id}&user={user_id}'
+    }
+
+    return response_data
 
 @app.route('/record', methods=['GET'])
-def download_record():
-    # Получаем параметры из запроса
-    record_id = request.args.get('id')
+def get_audio_handler():
+    audio_id = request.args.get('id')
+
     user_id = request.args.get('user')
 
-    # Получаем данные записи из БД
-    record = db.get_record(record_id)
+    if not all([audio_id, user_id]):
+        return Response(status=400)
 
-    # Проверяем, что пользователь имеет доступ к записи
-    if not record or record.user_id != user_id:
-        return jsonify({'error': 'Record not found or unauthorized access'}), 401
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
 
-    # Отправляем файл на скачивание
-    return send_file(record.filepath, as_attachment=True)
+    query = f"SELECT * FROM audios WHERE id='{audio_id}' AND user_id='{user_id}'"
 
+    cur.execute(query)
+
+    result = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if result is None:
+        return Response(status=404)
+
+    filename = result[2]
+
+    response = requests.get(f'http://host:port/{filename}')
+
+    return response.content
 
 if __name__ == '__main__':
-    app.run(debug=True)
+        app.run(host='0.0.0.0', port=5000)
+

@@ -1,0 +1,4 @@
+Flask
+psycopg2-binary
+pydub==0.25.1
+soundfile==0.10.3.post1
