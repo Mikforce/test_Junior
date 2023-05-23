@@ -1,6 +1,0 @@
-Flask
-SQLAlchemy
-psycopg2-binary
-Pydantic
-ffmpeg-python
-flask-cors
