@@ -5,8 +5,6 @@ import uuid
 import subprocess
 from models import User, Record, Base, engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
 import re
 from werkzeug.utils import secure_filename
 

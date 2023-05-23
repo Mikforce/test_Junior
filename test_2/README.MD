@@ -41,13 +41,15 @@
 * Flask
 * PostgreSQL
 * SQLAlchemy
+* psycopg2
+* uuid
 
 ## Как запустить
 
 1. Склонируйте репозиторий
 2. Создайте и активируйте виртаульное окружение
 ```commandline
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 sudo docker-compose up -d
 
@@ -57,6 +59,18 @@ sudo docker-compose up -d
 flask --app main.py run
 http://127.0.0.1:5000/questions
 ```
+4. запрос на создание пользователя:
+
+curl --header "Content-Type: application/json" --request POST --data '{"username":"test_user"}' http://localhost:5000/create_user
+
+5. добавления аудиозаписи
+curl --header "Content-Type: multipart/form-data" \
+  -F "user_id=7acbc5b6-5c8e-4f12-8d70-15f04580dd52" \
+  -F "access_token=f32a53c9-c3bb-42e6-a475-e5c90f345f14" \
+  -F "audio_file=@test.wav" \
+  http://localhost:5000/add_audio
+6. скачивания аудиозаписи
+curl http://localhost:5000/record?id=60deda01-3e03-4a1c-9c2c-9eaf588fd1a1&user=7acbc5b6-5c8e-4f12-8d70-15f04580dd52 -o test.mp3
 
 ## Автор
 Толпеев Иван

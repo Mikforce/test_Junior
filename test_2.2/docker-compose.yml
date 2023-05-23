@@ -1,7 +1,7 @@
 version: '3'
 services:
   db:
-    image: postgres:12
+    image: postgres
     restart: always
     environment:
       POSTGRES_USER: admin

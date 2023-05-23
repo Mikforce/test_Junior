@@ -1,13 +1,11 @@
-FROM python:3.10-alpine
+FROM python:3.9
 
-RUN mkdir /test_2
-WORKDIR /test_2
+WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --upgrade pip -r requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . .
 
-CMD ["python", "main.py"]
-
+CMD [ "python", "-u", "./main.py" ]

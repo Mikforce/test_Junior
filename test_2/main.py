@@ -1,148 +1,206 @@
-from typing import List
-import os
+# import psycopg2 as psycopg2
+# from flask import Flask, request, jsonify, send_from_directory
+# import uuid
+# import os
+#
+# app = Flask(__name__)
+# app.config['UPLOAD_FOLDER'] = 'uploads'
+# # connect to postgres database
+# db = psycopg2.connect(
+#     host='localhost',
+#     port=5432,
+#     dbname='dbname',
+#     user='user',
+#     password='password'
+# )
+#
+#
+# @app.route('/create_user', methods=['POST'])
+# def create_user():
+#     # get user name from request
+#     username = request.json['username']
+#
+#     # generate unique user id and access token
+#     user_id = str(uuid.uuid4())
+#     access_token = str(uuid.uuid4())
+#
+#     # insert user record into database
+#     cur = db.cursor()
+#
+#     cur.execute(f"INSERT INTO users (id, username, access_token) VALUES ('{user_id}', '{username}', '{access_token}')")
+#     db.commit()
+#
+#     return jsonify({'user_id': user_id, 'access_token': access_token}), 200
+#
+#
+# @app.route('/add_audio', methods=['POST'])
+# def add_audio():
+#     # get user id, access token and audio file from request
+#     user_id = request.form.get('user_id')
+#     access_token = request.form.get('access_token')
+#     audio_file = request.files['audio_file']
+#
+#     # verify user access token
+#     cur = db.cursor()
+#     cur.execute(f"SELECT access_token FROM users WHERE id = '{user_id}'")
+#     user_access_token = cur.fetchone()[0]
+#     if user_access_token != access_token:
+#         return jsonify({'error': 'access denied'}), 401
+#
+#     # convert audio file to mp3 format
+#     audio_id = str(uuid.uuid4())
+#     audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{audio_id}.mp3")
+#     audio_file.save(audio_path)
+#
+#     # insert audio record into database
+#     cur.execute(f"INSERT INTO audios (id, user_id, filename) VALUES ('{audio_id}', '{user_id}', '{audio_id}.mp3')")
+#     db.commit()
+#
+#     # return download url for the audio file
+#     return jsonify({'url': f"http://host:port/record?id={audio_id}&user={user_id}"}), 200
+#
+#
+# @app.route('/record')
+# def download_record():
+#     # get audio id and user id from request
+#     audio_id = request.args.get('id')
+#     user_id = request.args.get('user')
+#
+#     # verify user access to the audio file
+#     cur = db.cursor()
+#     cur.execute(f"SELECT filename FROM audios WHERE id = '{audio_id}' AND user_id = '{user_id}'")
+#     filename = cur.fetchone()[0]
+#     if filename is None:
+#         return jsonify({'error': 'access denied'}), 401
+#
+#     # return audio file for download
+#     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+import psycopg2 as psycopg2
+from flask import Flask, request, jsonify, send_from_directory
 import uuid
-import base64
-
-from flask import Flask, jsonify, request, send_file
-
-from sqlalchemy import create_engine, Column, Integer, String, Binary, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SQLAlchemyError
-from flask_cors import CORS
-from ffmpeg import FFmpeg
+import os
 
 app = Flask(__name__)
-CORS(app)
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
-DATABASE_URL = os.environ['DATABASE_URL']
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
-Base = declarative_base()
+class Database:
+    def __init__(self):
+        # connect to postgres database
+        self.connection = psycopg2.connect(
+            host='localhost',
+            port=5432,
+            dbname='dbname',
+            user='user',
+            password='password'
+        )
 
-class User(Base):
-    __tablename__ = 'users'
+        # create users table if it doesn't exist
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id UUID PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    access_token UUID NOT NULL
+                )
+            """)
+            self.connection.commit()
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(50))
-    token = Column(String(50), unique=True)
+        # create audios table if it doesn't exist
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audios (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users (id),
+                    filename TEXT NOT NULL
+                )
+            """)
+            self.connection.commit()
 
-    def __repr__(self):
-        return f"<User(name='{self.name}', token='{self.token}')>"
+    def insert_user(self, username, access_token):
+        # generate unique user id
+        user_id = str(uuid.uuid4())
 
-class Record(Base):
-    __tablename__ = 'records'
+        # insert user record into database
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO users (id, username, access_token)
+                VALUES (%s, %s, %s)
+            """, (user_id, username, access_token))
+            self.connection.commit()
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer)
-    audio_wav = Column(Binary)
-    audio_mp3 = Column(Binary)
-    uuid = Column(String(50), unique=True)
+        return {'user_id': user_id, 'access_token': access_token}
 
-    UniqueConstraint(user_id, uuid)
+    def insert_audio(self, user_id, access_token, audio_file):
+        # verify user access token
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT access_token FROM users WHERE id = %s
+            """, (user_id,))
+            user_access_token = cursor.fetchone()[0]
 
-    def __repr__(self):
-        return f"<Record(user_id={self.user_id}, uuid='{self.uuid}')>"
+            if user_access_token != access_token:
+                return {'error': 'access denied'}, 401
 
-def create_tables():
-    Base.metadata.create_all(engine)
+        # convert audio file to mp3 format
+        audio_id = str(uuid.uuid4())
+        audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{audio_id}.mp3")
+        audio_file.save(audio_path)
 
-@app.route('/users', methods=['POST'])
+        # insert audio record into database
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO audios (id, user_id, filename)
+                VALUES (%s, %s, %s)
+            """, (audio_id, user_id, f"{audio_id}.mp3"))
+            self.connection.commit()
+
+        # return download url for the audio file
+        return {'url': f"http://host:port/record?id={audio_id}&user={user_id}"}
+
+    def get_audio_filename(self, audio_id, user_id):
+        # verify user access to the audio file
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT filename FROM audios WHERE id = %s AND user_id = %s
+            """, (audio_id, user_id))
+            filename = cursor.fetchone()[0]
+
+            if filename is None:
+                return {'error': 'access denied'}, 401
+
+        return filename
+
+db = Database()
+
+@app.route('/create_user', methods=['POST'])
 def create_user():
-    session = Session()
-    try:
-        data = request.json
-        name = data['name']
-        token = str(uuid.uuid4())
-        user = User(name=name, token=token)
-        session.add(user)
-        session.commit()
+    # get user name from request
+    username = request.json['username']
+    access_token = str(uuid.uuid4())
 
-        return jsonify({
-            'id': user.id,
-            'access_token': user.token
-        }), 201
-    except KeyError:
-        return jsonify({'error': 'Invalid input'}), 400
-    except SQLAlchemyError as e:
-        session.rollback()
-        error = str(e.__dict__['orig'])
-        return jsonify({'error': error}), 409
-    finally:
-        session.close()
+    result = db.insert_user(username, access_token)
+    return jsonify(result), 200
 
-@app.route('/records', methods=['POST'])
-def add_record():
-    session = Session()
-    try:
-        data = request.form
-        user_id = int(data['user_id'])
-        access_token = data['access_token']
-        audio_wav = request.files['audio'].read()
+@app.route('/add_audio', methods=['POST'])
+def add_audio():
+    # get user id, access token and audio file from request
+    user_id = request.form.get('user_id')
+    access_token = request.form.get('access_token')
+    audio_file = request.files['audio_file']
 
-        # Проверить токен доступа
-        user = session.query(User).filter(User.id == user_id, User.token == access_token).first()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        # Конвертировать аудио в mp3
-        audio_conv = FFmpeg(inputs={'pipe:0': '-f wav -ac 2 -ar 44100'}, outputs={'pipe:1': '-f mp3 -q:a 0 -map a'})
-        audio_mp3 = audio_conv.run(audio_wav)[0]
-
-        # Сохранить запись в базу данных
-        uuid_str = str(uuid.uuid4())
-        record = Record(user_id=user_id, audio_wav=audio_wav, audio_mp3=audio_mp3, uuid=uuid_str)
-        session.add(record)
-        session.commit()
-
-        return jsonify({
-            'url': f'http://{request.host}/record?id={uuid_str}&user={user_id}'
-        }), 201
-    except KeyError:
-        return jsonify({'error': 'Invalid input'}), 400
-    except SQLAlchemyError as e:
-        session.rollback()
-        error = str(e.__dict__['orig'])
-        return jsonify({'error': error}), 409
-    finally:
-        session.close()
+    result = db.insert_audio(user_id, access_token, audio_file)
+    return jsonify(result), 200
 
 @app.route('/record')
 def download_record():
-    session = Session()
-    try:
-        uuid_str = request.args.get('id')
-        user_id = int(request.args.get('user'))
+    # get audio id and user id from request
+    audio_id = request.args.get('id')
+    user_id = request.args.get('user')
 
-        # Проверять
-        user = session.query(User).filter(User.id == user_id).first()
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        if request.args.get('token') != user.token:
-            return jsonify({'error': 'Unauthorized'}), 401
+    # get audio file name from database
+    filename = db.get_audio_filename(audio_id, user_id)
 
-        # Получить запись из базы данных
-        record = session.query(Record).filter(Record.user_id == user_id, Record.uuid == uuid_str).first()
-        if not record:
-            return jsonify({'error': 'Record not found'}), 404
-
-        # Вернуть аудиофайл
-        return send_file(
-            data=record.audio_mp3,
-            mimetype='audio/mpeg',
-            attachment_filename=f'record_{uuid_str}.mp3',
-            as_attachment=True
-        )
-
-    except ValueError:
-        return jsonify({'error': 'Invalid user ID'}), 400
-    except SQLAlchemyError as e:
-        session.rollback()
-        error = str(e.__dict__['orig'])
-        return jsonify({'error': error}), 409
-    finally:
-        session.close()
-
-if __name__ == '__main__':
-    create_tables()
-    app.run(host='0.0.0.0', port=5000)
+    # return audio file for download
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)

@@ -3,9 +3,9 @@
 import requests
 import json
 
-url = 'http://localhost:5000/users'
+url = 'http://127.0.0.1:5000//users'
 headers = {"Content-Type": "application/json"}
-user_data = {"name": "New User"}
+user_data = {"name": "ads"}
 
 response = requests.post(url=url, data=json.dumps(user_data), headers=headers)
 

@@ -26,5 +26,5 @@ class Record(Base):
         self.user_id = user_id
         self.url = url
 
-engine = create_engine('postgresql://your_username:your_password@localhost:5432/your_database_name')
+engine = create_engine('postgresql://admin:admin@localhost/admin')
 Base.metadata.create_all(engine)
